@@ -1,6 +1,6 @@
 "use client"
 
-import { useEffect, useMemo, useState } from "react"
+import { useEffect, useMemo, useRef, useState } from "react"
 import { animate, motion, useMotionValue, useTransform } from "framer-motion"
 import { Activity, Check, CheckCircle2, MessageSquare, PhoneCall, Target, ThumbsDown, Users } from "lucide-react"
 
@@ -31,18 +31,56 @@ const events = [
   "Ligação concluída com sucesso",
 ]
 
+const CALL_MULTIPLIERS = [10, 8, 7, 6, 5] as const
+const INCREMENT_STEP_MS = 100
+const UPDATE_INTERVAL_MS = 2200
+
+function createRandomMultiplierRound() {
+  return [...CALL_MULTIPLIERS].sort(() => Math.random() - 0.5)
+}
+
 export function LiveCampaignPanel() {
   const [metrics, setMetrics] = useState(initialMetrics)
   const [eventIndex, setEventIndex] = useState(0)
   const [lastUpdate, setLastUpdate] = useState(new Date())
+  const multiplierRound = useRef<number[]>(createRandomMultiplierRound())
 
   useEffect(() => {
+    const gradualUpdates = new Set<number>()
+
     const interval = window.setInterval(() => {
-      setMetrics((current) => current.map((metric, index) => ({ ...metric, value: metric.value + (index === 2 ? 0 : Math.floor(Math.random() * 4) + 1) })))
+      if (multiplierRound.current.length === 0) {
+        multiplierRound.current = createRandomMultiplierRound()
+      }
+
+      const callMultiplier = multiplierRound.current.pop() ?? CALL_MULTIPLIERS[CALL_MULTIPLIERS.length - 1]
+      let completedSteps = 0
+
+      const gradualUpdate = window.setInterval(() => {
+        setMetrics((current) =>
+          current.map((metric, index) => ({
+            ...metric,
+            value: metric.value + (index === 2 ? 0 : 1),
+          })),
+        )
+
+        completedSteps += 1
+
+        if (completedSteps === callMultiplier) {
+          window.clearInterval(gradualUpdate)
+          gradualUpdates.delete(gradualUpdate)
+          setLastUpdate(new Date())
+        }
+      }, INCREMENT_STEP_MS)
+
+      gradualUpdates.add(gradualUpdate)
       setEventIndex((current) => (current + 1) % events.length)
-      setLastUpdate(new Date())
-    }, 2200)
-    return () => window.clearInterval(interval)
+    }, UPDATE_INTERVAL_MS)
+
+    return () => {
+      window.clearInterval(interval)
+      gradualUpdates.forEach((update) => window.clearInterval(update))
+    }
   }, [])
 
   const conversion = useMemo(() => Math.round((metrics[3].value / metrics[0].value) * 100), [metrics])
